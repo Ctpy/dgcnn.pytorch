@@ -17,6 +17,7 @@ import torch.nn.functional as F
 import torch.optim as optim
 from torch.optim.lr_scheduler import CosineAnnealingLR, StepLR
 from data import S3DIS
+from data import ScanNet, ScanNet_Subvolume
 from model import DGCNN_semseg
 import numpy as np
 from torch.utils.data import DataLoader
@@ -148,11 +149,18 @@ def visualization(visu, visu_format, test_choice, data, seg, pred, visual_file_i
             
         
 def train(args, io):
-    train_loader = DataLoader(S3DIS(partition='train', num_points=args.num_points, test_area=args.test_area), 
-                              num_workers=8, batch_size=args.batch_size, shuffle=True, drop_last=True)
-    test_loader = DataLoader(S3DIS(partition='test', num_points=args.num_points, test_area=args.test_area), 
-                            num_workers=8, batch_size=args.test_batch_size, shuffle=True, drop_last=False)
-
+    if args.dataset == "S3DIS":
+        train_loader = DataLoader(S3DIS(partition='train', num_points=args.num_points, test_area=args.test_area), 
+                                num_workers=8, batch_size=args.batch_size, shuffle=True, drop_last=True)
+        test_loader = DataLoader(S3DIS(partition='test', num_points=args.num_points, test_area=args.test_area), 
+                                num_workers=8, batch_size=args.test_batch_size, shuffle=True, drop_last=False)
+    elif args.dataset == "ScanNet":
+        train_loader = DataLoader(ScanNet_Subvolume(root="", split='train'),
+                                num_workers=8, batch_size=args.batch_size, shuffle=True, drop_last=True)
+        test_loader = DataLoader(ScanNet_Subvolume(root="", split='test'),
+                                num_workers=8, batch_size=args.test_batch_size, shuffle=True, drop_last=False)
+    else:
+        raise Exception("Not implemented")
     device = torch.device("cuda" if args.cuda else "cpu")
 
     #Try to load models
@@ -192,13 +200,14 @@ def train(args, io):
         train_true_seg = []
         train_pred_seg = []
         train_label_seg = []
-        for data, seg in train_loader:
+        for data, seg, weights, idx, label_list in train_loader:
+            print(data.shape)
             data, seg = data.to(device), seg.to(device)
-            data = data.permute(0, 2, 1)
+            #data = data.permute(0, 2, 1)
             batch_size = data.size()[0]
             opt.zero_grad()
             seg_pred = model(data)
-            seg_pred = seg_pred.permute(0, 2, 1).contiguous()
+            # seg_pred = seg_pred.permute(0, 2, 1).contiguous()
             loss = criterion(seg_pred.view(-1, 13), seg.view(-1,1).squeeze())
             loss.backward()
             opt.step()
@@ -234,15 +243,15 @@ def train(args, io):
         io.cprint(outstr)
 
         ####################
-        # Test
+        # Val
         ####################
-        test_loss = 0.0
+        val_loss = 0.0
         count = 0.0
         model.eval()
-        test_true_cls = []
-        test_pred_cls = []
-        test_true_seg = []
-        test_pred_seg = []
+        val_true_cls = []
+        val_pred_cls = []
+        val_true_seg = []
+        val_pred_seg = []
         for data, seg in test_loader:
             data, seg = data.to(device), seg.to(device)
             data = data.permute(0, 2, 1)
@@ -252,28 +261,28 @@ def train(args, io):
             loss = criterion(seg_pred.view(-1, 13), seg.view(-1,1).squeeze())
             pred = seg_pred.max(dim=2)[1]
             count += batch_size
-            test_loss += loss.item() * batch_size
+            val_loss += loss.item() * batch_size
             seg_np = seg.cpu().numpy()
             pred_np = pred.detach().cpu().numpy()
-            test_true_cls.append(seg_np.reshape(-1))
-            test_pred_cls.append(pred_np.reshape(-1))
-            test_true_seg.append(seg_np)
-            test_pred_seg.append(pred_np)
-        test_true_cls = np.concatenate(test_true_cls)
-        test_pred_cls = np.concatenate(test_pred_cls)
-        test_acc = metrics.accuracy_score(test_true_cls, test_pred_cls)
-        avg_per_class_acc = metrics.balanced_accuracy_score(test_true_cls, test_pred_cls)
-        test_true_seg = np.concatenate(test_true_seg, axis=0)
-        test_pred_seg = np.concatenate(test_pred_seg, axis=0)
-        test_ious = calculate_sem_IoU(test_pred_seg, test_true_seg)
-        outstr = 'Test %d, loss: %.6f, test acc: %.6f, test avg acc: %.6f, test iou: %.6f' % (epoch,
-                                                                                              test_loss*1.0/count,
-                                                                                              test_acc,
+            val_true_cls.append(seg_np.reshape(-1))
+            val_pred_cls.append(pred_np.reshape(-1))
+            val_true_seg.append(seg_np)
+            val_pred_seg.append(pred_np)
+        val_true_cls = np.concatenate(val_true_cls)
+        val_pred_cls = np.concatenate(val_pred_cls)
+        val_acc = metrics.accuracy_score(val_true_cls, val_pred_cls)
+        avg_per_class_acc = metrics.balanced_accuracy_score(val_true_cls, val_pred_cls)
+        val_true_seg = np.concatenate(val_true_seg, axis=0)
+        val_pred_seg = np.concatenate(val_pred_seg, axis=0)
+        val_ious = calculate_sem_IoU(val_pred_seg, val_true_seg)
+        outstr = 'Val %d, loss: %.6f, val acc: %.6f, val avg acc: %.6f, val iou: %.6f' % (epoch,
+                                                                                              val_loss*1.0/count,
+                                                                                              val_acc,
                                                                                               avg_per_class_acc,
-                                                                                              np.mean(test_ious))
+                                                                                              np.mean(val_ious))
         io.cprint(outstr)
-        if np.mean(test_ious) >= best_test_iou:
-            best_test_iou = np.mean(test_ious)
+        if np.mean(val_ious) >= best_test_iou:
+            best_test_iou = np.mean(val_ious)
             torch.save(model.state_dict(), 'outputs/%s/models/model_%s.t7' % (args.exp_name, args.test_area))
 
 
@@ -307,12 +316,12 @@ def test(args, io):
             model = nn.DataParallel(model)
             model.load_state_dict(torch.load(os.path.join(args.model_root, 'model_%s.t7' % test_area)))
             model = model.eval()
-            test_acc = 0.0
+            val_acc = 0.0
             count = 0.0
-            test_true_cls = []
-            test_pred_cls = []
-            test_true_seg = []
-            test_pred_seg = []
+            val_true_cls = []
+            val_pred_cls = []
+            val_true_seg = []
+            val_pred_seg = []
             for data, seg in test_loader:
                 data, seg = data.to(device), seg.to(device)
                 data = data.permute(0, 2, 1)
@@ -322,31 +331,31 @@ def test(args, io):
                 pred = seg_pred.max(dim=2)[1] 
                 seg_np = seg.cpu().numpy()
                 pred_np = pred.detach().cpu().numpy()
-                test_true_cls.append(seg_np.reshape(-1))
-                test_pred_cls.append(pred_np.reshape(-1))
-                test_true_seg.append(seg_np)
-                test_pred_seg.append(pred_np)
+                val_true_cls.append(seg_np.reshape(-1))
+                val_pred_cls.append(pred_np.reshape(-1))
+                val_true_seg.append(seg_np)
+                val_pred_seg.append(pred_np)
                 # visiualization
                 visualization(args.visu, args.visu_format, args.test_area, data, seg, pred, visual_file_index, semseg_colors) 
                 visual_file_index = visual_file_index + data.shape[0]
             if visual_warning and args.visu != '':
                 print('Visualization Failed: You can only choose a room to visualize within the scope of the test area')
-            test_true_cls = np.concatenate(test_true_cls)
-            test_pred_cls = np.concatenate(test_pred_cls)
-            test_acc = metrics.accuracy_score(test_true_cls, test_pred_cls)
-            avg_per_class_acc = metrics.balanced_accuracy_score(test_true_cls, test_pred_cls)
-            test_true_seg = np.concatenate(test_true_seg, axis=0)
-            test_pred_seg = np.concatenate(test_pred_seg, axis=0)
-            test_ious = calculate_sem_IoU(test_pred_seg, test_true_seg)
+            val_true_cls = np.concatenate(val_true_cls)
+            val_pred_cls = np.concatenate(val_pred_cls)
+            val_acc = metrics.accuracy_score(val_true_cls, val_pred_cls)
+            avg_per_class_acc = metrics.balanced_accuracy_score(val_true_cls, val_pred_cls)
+            val_true_seg = np.concatenate(val_true_seg, axis=0)
+            val_pred_seg = np.concatenate(val_pred_seg, axis=0)
+            val_ious = calculate_sem_IoU(val_pred_seg, val_true_seg)
             outstr = 'Test :: test area: %s, test acc: %.6f, test avg acc: %.6f, test iou: %.6f' % (test_area,
-                                                                                                    test_acc,
+                                                                                                    val_acc,
                                                                                                     avg_per_class_acc,
-                                                                                                    np.mean(test_ious))
+                                                                                                    np.mean(val_ious))
             io.cprint(outstr)
-            all_true_cls.append(test_true_cls)
-            all_pred_cls.append(test_pred_cls)
-            all_true_seg.append(test_true_seg)
-            all_pred_seg.append(test_pred_seg)
+            all_true_cls.append(val_true_cls)
+            all_pred_cls.append(val_pred_cls)
+            all_true_seg.append(val_true_seg)
+            all_pred_seg.append(val_pred_seg)
 
     if args.test_area == 'all':
         all_true_cls = np.concatenate(all_true_cls)
@@ -371,7 +380,7 @@ if __name__ == "__main__":
                         choices=['dgcnn'],
                         help='Model to use, [dgcnn]')
     parser.add_argument('--dataset', type=str, default='S3DIS', metavar='N',
-                        choices=['S3DIS'])
+                        choices=['S3DIS', 'ScanNet'])
     parser.add_argument('--test_area', type=str, default=None, metavar='N',
                         choices=['1', '2', '3', '4', '5', '6', 'all'])
     parser.add_argument('--batch_size', type=int, default=32, metavar='batch_size',
