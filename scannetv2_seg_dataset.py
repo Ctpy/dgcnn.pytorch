@@ -45,7 +45,6 @@ def gen_pickle(split = "val", root = "DataSet/Scannet_v2"):
     scene_data_id = []
     scene_data_num = []
     label_map = gen_label_map()
-
     for i in range(len(scene_id)): #len(scene_id)
         print('process...', i)
         scene_namergb = os.path.join(root, scene_id[i], scene_id[i]+'_vh_clean_2.ply')

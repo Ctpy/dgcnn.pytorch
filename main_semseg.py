@@ -198,9 +198,10 @@ def train(args, io):
         train_true_seg = []
         train_pred_seg = []
         train_label_seg = []
-        for data, seg in train_loader:
+        for data, seg, weights, idx, label_list in train_loader:
+            print(data.shape)
             data, seg = data.to(device), seg.to(device)
-            data = data.permute(0, 2, 1)
+            #data = data.permute(0, 2, 1)
             batch_size = data.size()[0]
             opt.zero_grad()
             seg_pred = model(data)
@@ -240,7 +241,7 @@ def train(args, io):
         io.cprint(outstr)
 
         ####################
-        # Test
+        # Val
         ####################
         if (epoch+1) % args.val_every_n == 0 and epoch != 0:
             test_loss = 0.0
@@ -314,12 +315,12 @@ def test(args, io):
             model = nn.DataParallel(model)
             model.load_state_dict(torch.load(os.path.join(args.model_root, 'model_%s.t7' % test_area)))
             model = model.eval()
-            test_acc = 0.0
+            val_acc = 0.0
             count = 0.0
-            test_true_cls = []
-            test_pred_cls = []
-            test_true_seg = []
-            test_pred_seg = []
+            val_true_cls = []
+            val_pred_cls = []
+            val_true_seg = []
+            val_pred_seg = []
             for data, seg in test_loader:
                 data, seg = data.to(device), seg.to(device)
                 data = data.permute(0, 2, 1)
@@ -329,31 +330,31 @@ def test(args, io):
                 pred = seg_pred.max(dim=2)[1] 
                 seg_np = seg.cpu().numpy()
                 pred_np = pred.detach().cpu().numpy()
-                test_true_cls.append(seg_np.reshape(-1))
-                test_pred_cls.append(pred_np.reshape(-1))
-                test_true_seg.append(seg_np)
-                test_pred_seg.append(pred_np)
+                val_true_cls.append(seg_np.reshape(-1))
+                val_pred_cls.append(pred_np.reshape(-1))
+                val_true_seg.append(seg_np)
+                val_pred_seg.append(pred_np)
                 # visiualization
                 visualization(args.visu, args.visu_format, args.test_area, data, seg, pred, visual_file_index, semseg_colors) 
                 visual_file_index = visual_file_index + data.shape[0]
             if visual_warning and args.visu != '':
                 print('Visualization Failed: You can only choose a room to visualize within the scope of the test area')
-            test_true_cls = np.concatenate(test_true_cls)
-            test_pred_cls = np.concatenate(test_pred_cls)
-            test_acc = metrics.accuracy_score(test_true_cls, test_pred_cls)
-            avg_per_class_acc = metrics.balanced_accuracy_score(test_true_cls, test_pred_cls)
-            test_true_seg = np.concatenate(test_true_seg, axis=0)
-            test_pred_seg = np.concatenate(test_pred_seg, axis=0)
-            test_ious = calculate_sem_IoU(test_pred_seg, test_true_seg)
+            val_true_cls = np.concatenate(val_true_cls)
+            val_pred_cls = np.concatenate(val_pred_cls)
+            val_acc = metrics.accuracy_score(val_true_cls, val_pred_cls)
+            avg_per_class_acc = metrics.balanced_accuracy_score(val_true_cls, val_pred_cls)
+            val_true_seg = np.concatenate(val_true_seg, axis=0)
+            val_pred_seg = np.concatenate(val_pred_seg, axis=0)
+            val_ious = calculate_sem_IoU(val_pred_seg, val_true_seg)
             outstr = 'Test :: test area: %s, test acc: %.6f, test avg acc: %.6f, test iou: %.6f' % (test_area,
-                                                                                                    test_acc,
+                                                                                                    val_acc,
                                                                                                     avg_per_class_acc,
-                                                                                                    np.mean(test_ious))
+                                                                                                    np.mean(val_ious))
             io.cprint(outstr)
-            all_true_cls.append(test_true_cls)
-            all_pred_cls.append(test_pred_cls)
-            all_true_seg.append(test_true_seg)
-            all_pred_seg.append(test_pred_seg)
+            all_true_cls.append(val_true_cls)
+            all_pred_cls.append(val_pred_cls)
+            all_true_seg.append(val_true_seg)
+            all_pred_seg.append(val_pred_seg)
 
     if args.test_area == 'all':
         all_true_cls = np.concatenate(all_true_cls)
