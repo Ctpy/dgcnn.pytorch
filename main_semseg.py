@@ -148,10 +148,16 @@ def visualization(visu, visu_format, test_choice, data, seg, pred, visual_file_i
             
         
 def train(args, io):
-    train_loader = DataLoader(S3DIS(partition='train', num_points=args.num_points, test_area=args.test_area), 
-                              num_workers=8, batch_size=args.batch_size, shuffle=True, drop_last=True)
-    test_loader = DataLoader(S3DIS(partition='test', num_points=args.num_points, test_area=args.test_area), 
-                            num_workers=8, batch_size=args.test_batch_size, shuffle=True, drop_last=False)
+    if args.dataset == 'S3DIS':
+        train_loader = DataLoader(S3DIS(partition='train', num_points=args.num_points, test_area=args.test_area), 
+                                num_workers=8, batch_size=args.batch_size, shuffle=True, drop_last=True)
+        test_loader = DataLoader(S3DIS(partition='test', num_points=args.num_points, test_area=args.test_area), 
+                                num_workers=8, batch_size=args.test_batch_size, shuffle=True, drop_last=False)
+    elif args.dataset == 'ScanNet':
+        train_loader = DataLoader(S3DIS(partition='train', num_points=args.num_points), 
+                                num_workers=8, batch_size=args.batch_size, shuffle=True, drop_last=True)
+        test_loader = DataLoader(S3DIS(partition='test', num_points=args.num_points), 
+                                num_workers=8, batch_size=args.test_batch_size, shuffle=True, drop_last=False)
 
     device = torch.device("cuda" if args.cuda else "cpu")
 
@@ -371,7 +377,7 @@ if __name__ == "__main__":
                         choices=['dgcnn'],
                         help='Model to use, [dgcnn]')
     parser.add_argument('--dataset', type=str, default='S3DIS', metavar='N',
-                        choices=['S3DIS'])
+                        choices=['S3DIS', 'ScanNet'])
     parser.add_argument('--test_area', type=str, default=None, metavar='N',
                         choices=['1', '2', '3', '4', '5', '6', 'all'])
     parser.add_argument('--batch_size', type=int, default=32, metavar='batch_size',

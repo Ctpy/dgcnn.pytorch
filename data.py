@@ -165,6 +165,40 @@ def load_data_semseg(partition, test_area):
     return all_data, all_seg
 
 
+def load_data_semseg_scannet(partition):
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+    DATA_DIR = os.path.join(BASE_DIR, 'data/scannet')
+    assert os.path.exists(DATA_DIR)
+
+    if partition == 'train':
+        data_dir = os.path.join(DATA_DIR, 'scans')
+    else:
+        data_dir = os.path.join(DATA_DIR, 'scans_test')
+
+    all_files = []
+    for sample_dir in os.listdir(data_dir):
+        if os.path.isdir(sample_dir):
+            file = sample_dir + '/' + sample_dir + '_vh_clean_2.labels.ply'
+            all_files.append(file)
+
+    data_batchlist, label_batchlist = [], []
+    for file in all_files:
+        assert(os.path.isfile(file))
+        with open(file, 'rb') as f:
+            plydata = PlyData.read(f)
+            num_verts = plydata['vertex'].count
+            vertices = np.zeros(shape=[num_verts, 3], dtype=np.float32)
+            vertices[:,0] = plydata['vertex'].data['x']
+            vertices[:,1] = plydata['vertex'].data['y']
+            vertices[:,2] = plydata['vertex'].data['z']
+            data_batchlist.append(vertices)
+            labels = np.zeros(shape=[num_verts, 1], dtype=np.int8)
+            labels[:,0] = plydata['vertex'].data['label']
+            label_batchlist.append(labels)
+
+    return data_batchlist, label_batchlist
+
+
 def load_color_partseg():
     colors = []
     labels = []
@@ -338,6 +372,27 @@ class S3DIS(Dataset):
         self.num_points = num_points
         self.partition = partition    
         self.semseg_colors = load_color_semseg()
+
+    def __getitem__(self, item):
+        pointcloud = self.data[item][:self.num_points]
+        seg = self.seg[item][:self.num_points]
+        if self.partition == 'train':
+            indices = list(range(pointcloud.shape[0]))
+            np.random.shuffle(indices)
+            pointcloud = pointcloud[indices]
+            seg = seg[indices]
+        seg = torch.LongTensor(seg)
+        return pointcloud, seg
+
+    def __len__(self):
+        return self.data.shape[0]
+
+
+class ScanNet(Dataset):
+    def __init__(self, num_points=8096, partition='train'):
+        self.data, self.seg = load_data_semseg_scannet(partition)
+        self.num_points = num_points
+        self.partition = partition    
 
     def __getitem__(self, item):
         pointcloud = self.data[item][:self.num_points]
