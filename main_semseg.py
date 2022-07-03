@@ -200,14 +200,14 @@ def train(args, io):
         train_true_seg = []
         train_pred_seg = []
         train_label_seg = []
-        for data, seg, weights, idx in train_loader:
+        for data, seg, weights, idx, label_list in train_loader:
             print(data.shape)
             data, seg = data.to(device), seg.to(device)
             #data = data.permute(0, 2, 1)
             batch_size = data.size()[0]
             opt.zero_grad()
             seg_pred = model(data)
-            seg_pred = seg_pred.permute(0, 2, 1).contiguous()
+            # seg_pred = seg_pred.permute(0, 2, 1).contiguous()
             loss = criterion(seg_pred.view(-1, 13), seg.view(-1,1).squeeze())
             loss.backward()
             opt.step()

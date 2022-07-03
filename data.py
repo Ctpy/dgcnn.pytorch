@@ -581,7 +581,7 @@ class ScanNet_Subvolume(Dataset):
         div_blocks_seg = np.concatenate(tuple(div_blocks_seg),axis=0)
         div_blocks_smpw = np.concatenate(tuple(div_blocks_smpw),axis=0)
         div_blocks_idxs = np.concatenate(tuple(div_blocks_idxs),axis=0)
-        return div_blocks, div_blocks_seg, div_blocks_smpw, div_blocks_idxs
+        return div_blocks, div_blocks_seg, div_blocks_smpw, div_blocks_idxs, self.semantic_labels_list
     def __len__(self):
         return len(self.scene_points_list)
 
