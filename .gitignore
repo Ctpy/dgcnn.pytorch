@@ -1,2 +1,8 @@
 .DS_Store
 */.DS_Store
+__pycache__/*
+data/*
+*.pickle
+.ipynb_checkpoints/*
+outputs/*
+prepare_data/meta/*
