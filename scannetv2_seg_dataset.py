@@ -45,6 +45,7 @@ def gen_pickle(split = "val", root = "DataSet/Scannet_v2"):
     scene_data_id = []
     scene_data_num = []
     label_map = gen_label_map()
+
     for i in range(len(scene_id)): #len(scene_id)
         print('process...', i)
         scene_namergb = os.path.join(root, scene_id[i], scene_id[i]+'_vh_clean_2.ply')
@@ -64,10 +65,13 @@ def gen_pickle(split = "val", root = "DataSet/Scannet_v2"):
         else:
             scene_data_label_tmp = np.zeros((scene_data_tmp.shape[0])).astype(np.int32)
             scene_point_id_tmp = scene_point_id
+        num = scene_data_label_tmp.shape[0]
+        idxs = np.random.choice(range(scene_data_tmp.shape[0]), 2048)
+        scene_points_num = 2048
         scene_data_label_tmp = label_map[scene_data_label_tmp]
-        scene_data.append(scene_data_tmp)
-        scene_data_labels.append(scene_data_label_tmp)
-        scene_data_id.append(scene_point_id_tmp)
+        scene_data.append(scene_data_tmp[idxs])
+        scene_data_labels.append(scene_data_label_tmp[idxs])
+        scene_data_id.append(scene_point_id_tmp[idxs])
         scene_data_num.append(scene_points_num)
 
     pickle_out = open("scannet_%s_rgb21c_pointid.pickle"%(split),"wb")
