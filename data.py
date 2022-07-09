@@ -187,8 +187,7 @@ def load_data_semseg_scannet(partition):
             points[:,:] = scene[:,0:3]
             data_batchlist.append(points)
             
-            labels = np.zeros(shape=[num_points, 1], dtype=np.int8)
-            labels[:,0] = scene[:,3]
+            labels = scene[:,3]
             label_batchlist.append(labels)
 
     return data_batchlist, label_batchlist
