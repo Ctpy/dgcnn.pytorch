@@ -1,0 +1,1 @@
+poetry run python main_semseg.py --exp_name=semseg_dgcnn_$(date +"%Y-%m-%d_%H-%M-%S") --dataset ScanNet --num_features=3 --num_sem_labels=256

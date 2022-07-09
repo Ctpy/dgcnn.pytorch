@@ -16,7 +16,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 from torch.optim.lr_scheduler import CosineAnnealingLR, StepLR
-from data import S3DIS
+from data import S3DIS, ScanNet
 from model import DGCNN_semseg
 import numpy as np
 from torch.utils.data import DataLoader
@@ -44,17 +44,17 @@ def _init_():
     os.system('cp data.py outputs' + '/' + args.exp_name + '/' + 'data.py.backup')
 
 
-def calculate_sem_IoU(pred_np, seg_np, visual=False):
-    I_all = np.zeros(13)
-    U_all = np.zeros(13)
+def calculate_sem_IoU(pred_np, seg_np, visual=False, num_sem_labels=13):
+    I_all = np.zeros(num_sem_labels)
+    U_all = np.zeros(num_sem_labels)
     for sem_idx in range(seg_np.shape[0]):
-        for sem in range(13):
+        for sem in range(num_sem_labels):
             I = np.sum(np.logical_and(pred_np[sem_idx] == sem, seg_np[sem_idx] == sem))
             U = np.sum(np.logical_or(pred_np[sem_idx] == sem, seg_np[sem_idx] == sem))
             I_all[sem] += I
             U_all[sem] += U
     if visual:
-        for sem in range(13):
+        for sem in range(num_sem_labels):
             if U_all[sem] == 0:
                 I_all[sem] = 1
                 U_all[sem] = 1
@@ -116,7 +116,7 @@ def visualization(visu, visu_format, test_choice, data, seg, pred, visual_file_i
             np.savetxt(f_gt, xyzRGB_gt, fmt='%s', delimiter=' ') 
             
             if roomname != roomname_next:
-                mIoU = np.mean(calculate_sem_IoU(np.array(room_pred), np.array(room_seg), visual=True))
+                mIoU = np.mean(calculate_sem_IoU(np.array(room_pred), np.array(room_seg), visual=True, num_sem_labels=args.num_sem_labels))
                 mIoU = str(round(mIoU, 4))
                 room_pred = []
                 room_seg = []
@@ -154,9 +154,9 @@ def train(args, io):
         test_loader = DataLoader(S3DIS(partition='test', num_points=args.num_points, test_area=args.test_area), 
                                 num_workers=8, batch_size=args.test_batch_size, shuffle=True, drop_last=False)
     elif args.dataset == 'ScanNet':
-        train_loader = DataLoader(S3DIS(partition='train', num_points=args.num_points), 
+        train_loader = DataLoader(ScanNet(partition='train', num_points=args.num_points), 
                                 num_workers=8, batch_size=args.batch_size, shuffle=True, drop_last=True)
-        test_loader = DataLoader(S3DIS(partition='test', num_points=args.num_points), 
+        test_loader = DataLoader(ScanNet(partition='test', num_points=args.num_points), 
                                 num_workers=8, batch_size=args.test_batch_size, shuffle=True, drop_last=False)
 
     device = torch.device("cuda" if args.cuda else "cpu")
@@ -205,7 +205,7 @@ def train(args, io):
             opt.zero_grad()
             seg_pred = model(data)
             seg_pred = seg_pred.permute(0, 2, 1).contiguous()
-            loss = criterion(seg_pred.view(-1, 13), seg.view(-1,1).squeeze())
+            loss = criterion(seg_pred.view(-1, args.num_sem_labels), seg.view(-1,1).squeeze())
             loss.backward()
             opt.step()
             pred = seg_pred.max(dim=2)[1]               # (batch_size, num_points)
@@ -255,7 +255,7 @@ def train(args, io):
             batch_size = data.size()[0]
             seg_pred = model(data)
             seg_pred = seg_pred.permute(0, 2, 1).contiguous()
-            loss = criterion(seg_pred.view(-1, 13), seg.view(-1,1).squeeze())
+            loss = criterion(seg_pred.view(-1, args.num_sem_labels), seg.view(-1,1).squeeze())
             pred = seg_pred.max(dim=2)[1]
             count += batch_size
             test_loss += loss.item() * batch_size
@@ -409,6 +409,10 @@ if __name__ == "__main__":
                         help='Dimension of embeddings')
     parser.add_argument('--k', type=int, default=20, metavar='N',
                         help='Num of nearest neighbors to use')
+    parser.add_argument('--num_features', type=int, default=9, metavar='N',
+                        help='num of features')
+    parser.add_argument('--num_sem_labels', type=int, default=13, metavar='N',
+                        help='num of semanic labels')
     parser.add_argument('--model_root', type=str, default='', metavar='N',
                         help='Pretrained model root')
     parser.add_argument('--visu', type=str, default='',

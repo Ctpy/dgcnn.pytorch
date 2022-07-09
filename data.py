@@ -21,6 +21,7 @@ import numpy as np
 import torch
 import json
 import cv2
+import pickle
 from torch.utils.data import Dataset
 
 
@@ -166,34 +167,28 @@ def load_data_semseg(partition, test_area):
 
 
 def load_data_semseg_scannet(partition):
-    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-    DATA_DIR = os.path.join(BASE_DIR, 'data/scannet')
+    DATA_DIR = '/cluster/52/scannet'
     assert os.path.exists(DATA_DIR)
 
     if partition == 'train':
-        data_dir = os.path.join(DATA_DIR, 'scans')
+        file = os.path.join(DATA_DIR, 'train.pickle')
     else:
-        data_dir = os.path.join(DATA_DIR, 'scans_test')
+        file = os.path.join(DATA_DIR, 'val_2048.pickle')
 
-    all_files = []
-    for sample_dir in os.listdir(data_dir):
-        if os.path.isdir(sample_dir):
-            file = sample_dir + '/' + sample_dir + '_vh_clean_2.labels.ply'
-            all_files.append(file)
+    assert(os.path.isfile(file))
 
     data_batchlist, label_batchlist = [], []
-    for file in all_files:
-        assert(os.path.isfile(file))
-        with open(file, 'rb') as f:
-            plydata = PlyData.read(f)
-            num_verts = plydata['vertex'].count
-            vertices = np.zeros(shape=[num_verts, 3], dtype=np.float32)
-            vertices[:,0] = plydata['vertex'].data['x']
-            vertices[:,1] = plydata['vertex'].data['y']
-            vertices[:,2] = plydata['vertex'].data['z']
-            data_batchlist.append(vertices)
-            labels = np.zeros(shape=[num_verts, 1], dtype=np.int8)
-            labels[:,0] = plydata['vertex'].data['label']
+    with open(file, 'rb') as f:
+        scenes = pickle.load(f)
+        for scene in scenes:
+            num_points = scene.shape[0]
+
+            points = np.zeros(shape=[num_points, 3], dtype=np.float32)
+            points[:,:] = scene[:,0:3]
+            data_batchlist.append(points)
+            
+            labels = np.zeros(shape=[num_points, 1], dtype=np.int8)
+            labels[:,0] = scene[:,3]
             label_batchlist.append(labels)
 
     return data_batchlist, label_batchlist
@@ -389,7 +384,7 @@ class S3DIS(Dataset):
 
 
 class ScanNet(Dataset):
-    def __init__(self, num_points=8096, partition='train'):
+    def __init__(self, num_points=2048, partition='train'):
         self.data, self.seg = load_data_semseg_scannet(partition)
         self.num_points = num_points
         self.partition = partition    
@@ -406,10 +401,16 @@ class ScanNet(Dataset):
         return pointcloud, seg
 
     def __len__(self):
-        return self.data.shape[0]
+        return len(self.data)
 
 
 if __name__ == '__main__':
+    train = ScanNet(2048)
+    test = ScanNet(2048, 'test')
+    data, seg = train[0]
+    print(data.shape)
+    print(seg.shape)
+
     train = ModelNet40(1024)
     test = ModelNet40(1024, 'test')
     data, label = train[0]
