@@ -154,9 +154,9 @@ def train(args, io):
         test_loader = DataLoader(S3DIS(partition='test', num_points=args.num_points, test_area=args.test_area), 
                                 num_workers=8, batch_size=args.test_batch_size, shuffle=True, drop_last=False)
     elif args.dataset == 'ScanNet':
-        train_loader = DataLoader(ScanNet(partition='train', num_points=args.num_points), 
+        train_loader = DataLoader(ScanNet(partition='train', num_points=args.num_points, method=args.scannet_method), 
                                 num_workers=8, batch_size=args.batch_size, shuffle=True, drop_last=True)
-        test_loader = DataLoader(ScanNet(partition='test', num_points=args.num_points), 
+        test_loader = DataLoader(ScanNet(partition='test', num_points=args.num_points, method=args.scannet_method), 
                                 num_workers=8, batch_size=args.test_batch_size, shuffle=True, drop_last=False)
 
     device = torch.device("cuda" if args.cuda else "cpu")
@@ -242,45 +242,46 @@ def train(args, io):
         ####################
         # Test
         ####################
-        test_loss = 0.0
-        count = 0.0
-        model.eval()
-        test_true_cls = []
-        test_pred_cls = []
-        test_true_seg = []
-        test_pred_seg = []
-        for data, seg in test_loader:
-            data, seg = data.to(device), seg.to(device)
-            data = data.permute(0, 2, 1)
-            batch_size = data.size()[0]
-            seg_pred = model(data)
-            seg_pred = seg_pred.permute(0, 2, 1).contiguous()
-            loss = criterion(seg_pred.view(-1, args.num_sem_labels), seg.view(-1,1).squeeze())
-            pred = seg_pred.max(dim=2)[1]
-            count += batch_size
-            test_loss += loss.item() * batch_size
-            seg_np = seg.cpu().numpy()
-            pred_np = pred.detach().cpu().numpy()
-            test_true_cls.append(seg_np.reshape(-1))
-            test_pred_cls.append(pred_np.reshape(-1))
-            test_true_seg.append(seg_np)
-            test_pred_seg.append(pred_np)
-        test_true_cls = np.concatenate(test_true_cls)
-        test_pred_cls = np.concatenate(test_pred_cls)
-        test_acc = metrics.accuracy_score(test_true_cls, test_pred_cls)
-        avg_per_class_acc = metrics.balanced_accuracy_score(test_true_cls, test_pred_cls)
-        test_true_seg = np.concatenate(test_true_seg, axis=0)
-        test_pred_seg = np.concatenate(test_pred_seg, axis=0)
-        test_ious = calculate_sem_IoU(test_pred_seg, test_true_seg)
-        outstr = 'Test %d, loss: %.6f, test acc: %.6f, test avg acc: %.6f, test iou: %.6f' % (epoch,
-                                                                                              test_loss*1.0/count,
-                                                                                              test_acc,
-                                                                                              avg_per_class_acc,
-                                                                                              np.mean(test_ious))
-        io.cprint(outstr)
-        if np.mean(test_ious) >= best_test_iou:
-            best_test_iou = np.mean(test_ious)
-            torch.save(model.state_dict(), 'outputs/%s/models/model_%s.t7' % (args.exp_name, args.test_area))
+        if (epoch+1) % args.val_every_n == 0 and epoch != 0:
+            test_loss = 0.0
+            count = 0.0
+            model.eval()
+            test_true_cls = []
+            test_pred_cls = []
+            test_true_seg = []
+            test_pred_seg = []
+            for data, seg in test_loader:
+                data, seg = data.to(device), seg.to(device)
+                data = data.permute(0, 2, 1)
+                batch_size = data.size()[0]
+                seg_pred = model(data)
+                seg_pred = seg_pred.permute(0, 2, 1).contiguous()
+                loss = criterion(seg_pred.view(-1, args.num_sem_labels), seg.view(-1,1).squeeze())
+                pred = seg_pred.max(dim=2)[1]
+                count += batch_size
+                test_loss += loss.item() * batch_size
+                seg_np = seg.cpu().numpy()
+                pred_np = pred.detach().cpu().numpy()
+                test_true_cls.append(seg_np.reshape(-1))
+                test_pred_cls.append(pred_np.reshape(-1))
+                test_true_seg.append(seg_np)
+                test_pred_seg.append(pred_np)
+            test_true_cls = np.concatenate(test_true_cls)
+            test_pred_cls = np.concatenate(test_pred_cls)
+            test_acc = metrics.accuracy_score(test_true_cls, test_pred_cls)
+            avg_per_class_acc = metrics.balanced_accuracy_score(test_true_cls, test_pred_cls)
+            test_true_seg = np.concatenate(test_true_seg, axis=0)
+            test_pred_seg = np.concatenate(test_pred_seg, axis=0)
+            test_ious = calculate_sem_IoU(test_pred_seg, test_true_seg)
+            outstr = 'Test %d, loss: %.6f, test acc: %.6f, test avg acc: %.6f, test iou: %.6f' % (epoch,
+                                                                                                test_loss*1.0/count,
+                                                                                                test_acc,
+                                                                                                avg_per_class_acc,
+                                                                                                np.mean(test_ious))
+            io.cprint(outstr)
+            if np.mean(test_ious) >= best_test_iou:
+                best_test_iou = np.mean(test_ious)
+                torch.save(model.state_dict(), 'outputs/%s/models/model_%s.t7' % (args.exp_name, args.test_area))
 
 
 def test(args, io):
@@ -378,6 +379,8 @@ if __name__ == "__main__":
                         help='Model to use, [dgcnn]')
     parser.add_argument('--dataset', type=str, default='S3DIS', metavar='N',
                         choices=['S3DIS', 'ScanNet'])
+    parser.add_argument('--scannet_method', type=str, default='pickle', metavar='N',
+                        choices=['pickle', 'ply'])
     parser.add_argument('--test_area', type=str, default=None, metavar='N',
                         choices=['1', '2', '3', '4', '5', '6', 'all'])
     parser.add_argument('--batch_size', type=int, default=32, metavar='batch_size',
@@ -386,7 +389,7 @@ if __name__ == "__main__":
                         help='Size of batch)')
     parser.add_argument('--epochs', type=int, default=100, metavar='N',
                         help='number of episode to train ')
-    parser.add_argument('--use_sgd', type=bool, default=True,
+    parser.add_argument('--use_sgd', dest='use_sgd', action='store_true',
                         help='Use SGD')
     parser.add_argument('--lr', type=float, default=0.001, metavar='LR',
                         help='learning rate (default: 0.001, 0.1 if using sgd)')
@@ -401,6 +404,8 @@ if __name__ == "__main__":
                         help='random seed (default: 1)')
     parser.add_argument('--eval', type=bool,  default=False,
                         help='evaluate the model')
+    parser.add_argument('--val_every_n', type=int, default=1, metavar='N',
+                        help='validate the model after every n-th epoch')
     parser.add_argument('--num_points', type=int, default=4096,
                         help='num of points to use')
     parser.add_argument('--dropout', type=float, default=0.5,

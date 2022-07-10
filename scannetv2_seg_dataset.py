@@ -66,15 +66,15 @@ def gen_pickle(split = "val", root = "DataSet/Scannet_v2"):
             scene_data_label_tmp = np.zeros((scene_data_tmp.shape[0])).astype(np.int32)
             scene_point_id_tmp = scene_point_id
         num = scene_data_label_tmp.shape[0]
-        idxs = np.random.choice(range(scene_data_tmp.shape[0]), 2048)
-        scene_points_num = 2048
+        scene_points_num = 8096
+        idxs = np.random.choice(range(scene_data_tmp.shape[0]), scene_points_num)
         scene_data_label_tmp = label_map[scene_data_label_tmp]
         scene_data.append(scene_data_tmp[idxs])
         scene_data_labels.append(scene_data_label_tmp[idxs])
         scene_data_id.append(scene_point_id_tmp[idxs])
         scene_data_num.append(scene_points_num)
 
-    pickle_out = open("scannet_%s_rgb21c_pointid.pickle"%(split),"wb")
+    pickle_out = open(f"scannet_%s_rgb21c_pointid_{scene_points_num}.pickle"%(split),"wb")
     pickle.dump(scene_data, pickle_out, protocol=0)
     pickle.dump(scene_data_labels, pickle_out, protocol=0)
     pickle.dump(scene_data_id, pickle_out, protocol=0)

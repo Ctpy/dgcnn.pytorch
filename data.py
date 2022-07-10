@@ -22,6 +22,8 @@ import torch
 import json
 import cv2
 import pickle
+import math
+from plyfile import PlyData
 from torch.utils.data import Dataset
 
 
@@ -166,31 +168,67 @@ def load_data_semseg(partition, test_area):
     return all_data, all_seg
 
 
-def load_data_semseg_scannet(partition):
+def load_data_semseg_scannet(partition, method='pickle'):
     DATA_DIR = '/cluster/52/scannet'
     assert os.path.exists(DATA_DIR)
 
-    if partition == 'train':
-        file = os.path.join(DATA_DIR, 'train.pickle')
-    else:
-        file = os.path.join(DATA_DIR, 'val_2048.pickle')
-
-    assert(os.path.isfile(file))
-
     data_batchlist, label_batchlist = [], []
-    with open(file, 'rb') as f:
-        scenes = pickle.load(f)
-        for scene in scenes:
-            num_points = scene.shape[0]
+    if method == 'pickle':
+        if partition == 'train':
+            file = os.path.join(DATA_DIR, 'train.pickle')
+        else:
+            file = os.path.join(DATA_DIR, 'val_2048.pickle')
 
-            points = np.zeros(shape=[num_points, 3], dtype=np.float32)
-            points[:,:] = scene[:,0:3]
-            data_batchlist.append(points)
+        assert(os.path.isfile(file))
+
+        with open(file, 'rb') as f:
+            scenes = pickle.load(f)
+            for scene in scenes:
+                num_points = scene.shape[0]
+
+                points = np.zeros(shape=[num_points, 3], dtype=np.float32)
+                points[:,:] = scene[:,0:3]
+                data_batchlist.append(points)
+                
+                labels = scene[:,3]
+                label_batchlist.append(labels)
+    else:
+        data_dir = os.path.join(DATA_DIR, 'scans')
+        assert(os.path.exists(data_dir))
+
+        all_files = []
+        for sample_folder in os.listdir(data_dir):
+            sample_dir = os.path.join(data_dir, sample_folder)
+            if os.path.isdir(sample_dir):
+                file = sample_dir + '/' + sample_folder + '_vh_clean_2.labels.ply'
+                all_files.append(file)
+
+        num_total = 1513
+        num_train = math.floor(num_total * 0.8)
+        num_val = num_total - num_train
+
+        if partition == 'train':
+            all_files = all_files[:num_train]
+        else:
+            all_files = all_files[num_train:]
             
-            labels = scene[:,3]
-            label_batchlist.append(labels)
-
+        for file in all_files:
+            assert(os.path.isfile(file))
+            with open(file, 'rb') as f:
+                plydata = PlyData.read(f)
+                num_verts = plydata['vertex'].count
+                vertices = np.zeros(shape=[num_verts, 3], dtype=np.float32)
+                vertices[:,0] = plydata['vertex'].data['x']
+                vertices[:,1] = plydata['vertex'].data['y']
+                vertices[:,2] = plydata['vertex'].data['z']
+                data_batchlist.append(vertices)
+                labels = np.zeros(shape=[num_verts, 1], dtype=np.int8)
+                labels[:,0] = plydata['vertex'].data['label']
+                label_batchlist.append(labels)
+    
     return data_batchlist, label_batchlist
+
+
 
 
 def load_color_partseg():
@@ -383,21 +421,33 @@ class S3DIS(Dataset):
 
 
 class ScanNet(Dataset):
-    def __init__(self, num_points=2048, partition='train'):
-        self.data, self.seg = load_data_semseg_scannet(partition)
+    def __init__(self, num_points=2048, partition='train', method='pickle'):
+        self.data, self.seg = load_data_semseg_scannet(partition, method)
+        print(len(self.data))
+        self.method = method
         self.num_points = num_points
         self.partition = partition    
 
     def __getitem__(self, item):
-        pointcloud = self.data[item][:self.num_points]
-        seg = self.seg[item][:self.num_points]
-        if self.partition == 'train':
-            indices = list(range(pointcloud.shape[0]))
-            np.random.shuffle(indices)
+        if self.method == 'pickle':
+            pointcloud = self.data[item][:self.num_points]
+            seg = self.seg[item][:self.num_points]
+            if self.partition == 'train':
+                indices = list(range(pointcloud.shape[0]))
+                np.random.shuffle(indices)
+                pointcloud = pointcloud[indices]
+                seg = seg[indices]
+            seg = torch.LongTensor(seg)
+            return pointcloud, seg
+        else:
+            pointcloud = self.data[item]
+            seg = self.seg[item]
+            num_scene_points = pointcloud.shape[0]
+            indices = np.random.choice(num_scene_points, self.num_points, replace=False)
             pointcloud = pointcloud[indices]
             seg = seg[indices]
-        seg = torch.LongTensor(seg)
-        return pointcloud, seg
+            seg = torch.LongTensor(seg)
+            return pointcloud, seg
 
     def __len__(self):
         return len(self.data)
