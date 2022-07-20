@@ -6,12 +6,9 @@ Date: July 2018
 """
 
 import os
-import sys
 import numpy as np 
-import util
-import h5py
 import pickle
-from plyfile import PlyData, PlyElement
+from plyfile import PlyData
 
 def remove_unano(scene_data, scene_label, scene_data_id):
     keep_idx = np.where((scene_label > 0) & (scene_label < 41)) # 0: unanotated
@@ -86,19 +83,11 @@ def gen_pickle(split = "val", root = "DataSet/Scannet_v2"):
                 curmin = coordmin+[i*xlength, j*ylength, 0]
                 curmax = coordmin+[(i+1)*xlength, (j+1)*ylength, coordmax[2]-coordmin[2]]
                 mask = np.sum((scene_data_tmp[:, :3]>=(curmin-0.01))*(scene_data_tmp[:, :3]<=(curmax+0.01)), axis=1)==3
-                cur_point_set = scene_data_tmp[mask,:]
                 cur_semantic_seg = semantic_seg_ini[mask]
-                cur_scene_point_id_tmp = scene_point_id_tmp[mask]
-                if len(cur_semantic_seg) == 0:
+                if len(cur_semantic_seg) < 500:
                     continue
 
                 choice = np.random.choice(len(cur_semantic_seg), npoints, replace=True)
-                point_set = cur_point_set[choice,:] # Nx3
-                semantic_seg = cur_semantic_seg[choice] # N
-                mask = mask[choice]
-                # if sum(mask)/float(len(mask))<0.01:
-                #     continue
-
 
                 scene_data.append(scene_data_tmp[choice])
                 scene_data_labels.append(scene_data_label_tmp[choice])
@@ -108,8 +97,8 @@ def gen_pickle(split = "val", root = "DataSet/Scannet_v2"):
                 # semantic_segs.append(np.expand_dims(semantic_seg,0)) # 1xN
 
 
-
-    pickle_out = open("scannet_%s_rgb21c_pointid.pickle"%(split),"wb")
+    #scannet_train_FPS_1024.pickle
+    pickle_out = open("scannet_%s_subVpoint2_2048.pickle"%(split),"wb")
     pickle.dump(scene_data, pickle_out, protocol=0)
     pickle.dump(scene_data_labels, pickle_out, protocol=0)
     pickle.dump(scene_data_id, pickle_out, protocol=0)
