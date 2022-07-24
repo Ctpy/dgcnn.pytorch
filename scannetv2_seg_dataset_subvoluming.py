@@ -28,6 +28,36 @@ def gen_label_map():
     print(label_map)
     return label_map
 
+
+def normalize_v3(arr):
+    ''' Normalize a numpy array of 3 component vectors shape=(n,3) '''
+    lens = np.sqrt( arr[:,0]**2 + arr[:,1]**2 + arr[:,2]**2 )
+    arr[:,0] /= (lens + 1e-8)
+    arr[:,1] /= (lens + 1e-8)
+    arr[:,2] /= (lens + 1e-8)                
+    return arr
+
+def compute_normal(vertices, faces):
+    #Create a zeroed array with the same type and shape as our vertices i.e., per vertex normal
+    normals = np.zeros( vertices.shape, dtype=vertices.dtype )
+    #Create an indexed view into the vertex array using the array of three indices for triangles
+    tris = vertices[faces]
+    #Calculate the normal for all the triangles, by taking the cross product of the vectors v1-v0, and v2-v0 in each triangle             
+    n = np.cross( tris[::,1 ] - tris[::,0]  , tris[::,2 ] - tris[::,0] )
+    # n is now an array of normals per triangle. The length of each normal is dependent the vertices, 
+    # we need to normalize these, so that our next step weights each normal equally.
+    normalize_v3(n)
+    # now we have a normalized array of normals, one per triangle, i.e., per triangle normals.
+    # But instead of one per triangle (i.e., flat shading), we add to each vertex in that triangle, 
+    # the triangles' normal. Multiple triangles would then contribute to every vertex, so we need to normalize again afterwards.
+    # The cool part, we can actually add the normals through an indexed view of our (zeroed) per vertex normal array
+    normals[ faces[:,0] ] += n
+    normals[ faces[:,1] ] += n
+    normals[ faces[:,2] ] += n
+    normalize_v3(normals)
+    
+    return normals
+
 def gen_pickle(split = "val", root = "DataSet/Scannet_v2"):
     if split == 'test':
         root = root + "/scans_test"
@@ -49,9 +79,14 @@ def gen_pickle(split = "val", root = "DataSet/Scannet_v2"):
         scene_namergb = os.path.join(root, scene_id[i], scene_id[i]+'_vh_clean_2.ply')
         scene_xyzlabelrgb = PlyData.read(scene_namergb)
         scene_vertex_rgb = scene_xyzlabelrgb['vertex']
+        # compute normals
+        xyz = np.array([[x, y, z] for x, y, z, _, _, _, _ in scene_xyzlabelrgb["vertex"].data])
+        face = np.array([f[0] for f in scene_xyzlabelrgb["face"].data])
+        nxnynz = compute_normal(xyz, face)
         scene_data_tmp = np.stack((scene_vertex_rgb['x'], scene_vertex_rgb['y'],
                                    scene_vertex_rgb['z'], scene_vertex_rgb['red'],
-                                   scene_vertex_rgb['green'], scene_vertex_rgb['blue']), axis = -1).astype(np.float32)
+                                   scene_vertex_rgb['green'], scene_vertex_rgb['blue'],
+                                   nxnynz[:,0], nxnynz[:,1], nxnynz[:,2]), axis = -1).astype(np.float32)
         scene_points_num = scene_data_tmp.shape[0]
         scene_point_id = np.array([c for c in range(scene_points_num)])
         if split != 'test':
@@ -74,7 +109,7 @@ def gen_pickle(split = "val", root = "DataSet/Scannet_v2"):
         coordmin = scene_data_tmp[:, :3].min(axis=0)
         xlength = 1.5
         ylength = 1.5
-        npoints = 2048
+        npoints = 8192
         nsubvolume_x = np.ceil((coordmax[0]-coordmin[0])/xlength).astype(np.int32)
         nsubvolume_y = np.ceil((coordmax[1]-coordmin[1])/ylength).astype(np.int32)
 
@@ -84,7 +119,7 @@ def gen_pickle(split = "val", root = "DataSet/Scannet_v2"):
                 curmax = coordmin+[(i+1)*xlength, (j+1)*ylength, coordmax[2]-coordmin[2]]
                 mask = np.sum((scene_data_tmp[:, :3]>=(curmin-0.01))*(scene_data_tmp[:, :3]<=(curmax+0.01)), axis=1)==3
                 cur_semantic_seg = semantic_seg_ini[mask]
-                if len(cur_semantic_seg) < 500:
+                if len(cur_semantic_seg) < 5000:
                     continue
 
                 choice = np.random.choice(len(cur_semantic_seg), npoints, replace=True)
@@ -98,7 +133,7 @@ def gen_pickle(split = "val", root = "DataSet/Scannet_v2"):
 
 
     #scannet_train_FPS_1024.pickle
-    pickle_out = open("scannet_%s_subVpoint2_2048.pickle"%(split),"wb")
+    pickle_out = open("scannet_%s_subVpoint2_normals_8192.pickle"%(split),"wb")
     pickle.dump(scene_data, pickle_out, protocol=0)
     pickle.dump(scene_data_labels, pickle_out, protocol=0)
     pickle.dump(scene_data_id, pickle_out, protocol=0)
