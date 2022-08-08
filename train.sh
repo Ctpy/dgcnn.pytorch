@@ -9,7 +9,7 @@ mkdir $EXP_DIR
 touch $LOG_FILE
 echo $@ > $EXP_DIR/hyperparams.txt
 
-poetry run python main_semseg.py --exp_name=$EXP_NAME --dataset ScanNet --num_features=3 --num_sem_labels=256 --num_points=2048 $@ 2>&1 | tee $LOG_FILE
+/rhome/ge23yeq/.poetry/bin/poetry run python main_semseg.py --exp_name=$EXP_NAME --dataset ScanNet --num_sem_labels=21 $@ 2>&1 | tee $LOG_FILE
 
 duration=$SECONDS
 echo "$(($duration / 60)) minutes and $(($duration % 60)) seconds elapsed."
