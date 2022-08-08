@@ -317,6 +317,8 @@ class DGCNN_semseg(nn.Module):
         super(DGCNN_semseg, self).__init__()
         self.args = args
         self.k = args.k
+        self.in_channels = args.num_features * 2
+        self.out_channels = args.num_sem_labels
         
         self.bn1 = nn.BatchNorm2d(64)
         self.bn2 = nn.BatchNorm2d(64)
@@ -327,7 +329,7 @@ class DGCNN_semseg(nn.Module):
         self.bn7 = nn.BatchNorm1d(512)
         self.bn8 = nn.BatchNorm1d(256)
 
-        self.conv1 = nn.Sequential(nn.Conv2d(18, 64, kernel_size=1, bias=False),
+        self.conv1 = nn.Sequential(nn.Conv2d(self.in_channels, 64, kernel_size=1, bias=False),
                                    self.bn1,
                                    nn.LeakyReLU(negative_slope=0.2))
         self.conv2 = nn.Sequential(nn.Conv2d(64, 64, kernel_size=1, bias=False),
@@ -352,7 +354,7 @@ class DGCNN_semseg(nn.Module):
                                    self.bn8,
                                    nn.LeakyReLU(negative_slope=0.2))
         self.dp1 = nn.Dropout(p=args.dropout)
-        self.conv9 = nn.Conv1d(256, 13, kernel_size=1, bias=False)
+        self.conv9 = nn.Conv1d(256, self.out_channels, kernel_size=1, bias=False)
         
 
     def forward(self, x):
